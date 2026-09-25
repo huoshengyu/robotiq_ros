@@ -1,7 +1,9 @@
-# Jazzy / Lyrical controller configuration. Humble uses
+# Jazzy / Lyrical controller configuration for the driver. Humble uses
 # config/robotiq_controllers.humble.yaml instead (no parallel_gripper_controller
-# package there); launch/robotiq_control.launch.py selects per $ROS_DISTRO.
-# Humble EOL: simplify — this becomes the only controller configuration.
+# package there); the ros2_control mock and the topic_based plugin have their
+# own, robotiq_controllers.mock.yaml and robotiq_controllers.topic_based.yaml.
+# launch/robotiq_control.launch.py selects per $ROS_DISTRO and hardware flag.
+# Humble EOL: simplify — one configuration per hardware plugin remains.
 controller_manager:
   ros__parameters:
     update_rate: 500  # Hz
@@ -17,9 +19,8 @@ controller_manager:
       shutdown_on_initial_state_failure: false
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
-    # Jazzy and newer: parallel_gripper_action_controller replaces gripper_controllers package
     robotiq_gripper_controller:
-      type: parallel_gripper_action_controller/GripperActionController
+      type: robotiq_controllers/GripperActionController
     robotiq_activation_controller:
       type: robotiq_controllers/RobotiqActivationController
     robotiq_gripper_status_broadcaster:
@@ -42,6 +43,9 @@ robotiq_gripper_controller:
     allow_stalling: true
     stall_timeout: 0.05
     goal_tolerance: 0.02
+    use_object_status: true
+    # Aborts a goal the gripper has not decided within this many seconds.
+    object_status_timeout: 10.0
 
 robotiq_activation_controller:
   ros__parameters:
