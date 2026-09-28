@@ -62,7 +62,7 @@ private:
    double object_status_timeout_ = 0.0;
    std::optional<std::reference_wrapper<hardware_interface::LoanedStateInterface>> object_status_;
    RealtimeGoalHandlePtr tracked_goal_;
-   rclcpp::Time accepted_at_;
+   rclcpp::Time timed_from_;
    std::optional<Robotiq::ObjectDetection> baseline_;
 };
 } // namespace robotiq_controllers

@@ -59,6 +59,10 @@ controller_interface::return_type GripperActionController::update(const rclcpp::
 {
    if(object_status_)
    {
+      // Reasserted every cycle rather than once at activation: only the gripper
+      // may call a stall, and a base that refreshed params_ would bring the
+      // velocity one back.
+      params_.stall_timeout = std::numeric_limits<double>::infinity();
       decideFromObjectStatus(time);
    }
    // A goal decided above is no longer active, so the stock check finds nothing to do.
@@ -78,7 +82,7 @@ void GripperActionController::decideFromObjectStatus(const rclcpp::Time& time)
    if(goal != tracked_goal_)
    {
       tracked_goal_ = goal;
-      accepted_at_ = time;
+      timed_from_ = time;
       // gOBJ still holds the previous goal's verdict until the gripper acts on
       // the new target, so only a change from this reading counts.
       baseline_ = detection;
@@ -97,6 +101,7 @@ void GripperActionController::decideFromObjectStatus(const rclcpp::Time& time)
          // verdict, even the value it started from, as when it tightens on the
          // object it already held.
          baseline_ = detection;
+         timed_from_ = time;
       }
       else
       {
@@ -105,7 +110,7 @@ void GripperActionController::decideFromObjectStatus(const rclcpp::Time& time)
          return;
       }
    }
-   if((time - accepted_at_).seconds() >= object_status_timeout_)
+   if((time - timed_from_).seconds() >= object_status_timeout_)
    {
       finish(goal, false, false);
    }
@@ -162,6 +167,14 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Grippe
    }
    use_object_status_ = get_node()->get_parameter(kUseObjectStatusParameter).as_bool();
    object_status_timeout_ = get_node()->get_parameter(kObjectStatusTimeoutParameter).as_double();
+   if(!(object_status_timeout_ > 0.0))
+   {
+      RCLCPP_ERROR(get_node()->get_logger(),
+                   "%s must be positive, got %g.",
+                   kObjectStatusTimeoutParameter,
+                   object_status_timeout_);
+      return CallbackReturn::ERROR;
+   }
    return CallbackReturn::SUCCESS;
 }
 
@@ -191,8 +204,6 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Grippe
       return CallbackReturn::ERROR;
    }
    object_status_ = *object_status;
-   // Stall timeout is only meaningful for a velocity-based stall detection:
-   params_.stall_timeout = std::numeric_limits<double>::infinity();
    return CallbackReturn::SUCCESS;
 }
 

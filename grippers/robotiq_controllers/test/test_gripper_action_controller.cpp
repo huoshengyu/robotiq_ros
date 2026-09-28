@@ -358,6 +358,23 @@ TEST_F(GripperActionControllerTest, aborts_a_goal_the_gripper_never_decides)
    expectStillActive();
 }
 
+TEST_F(GripperActionControllerTest, times_a_goal_from_the_last_motion_seen)
+{
+   bringUp(true, true);
+   object_status_ = kAtRequestedPosition;
+   sendGoal(0.5);
+   update(kPastTimeout / 2);
+   object_status_ = kMoving;
+   update(kPastTimeout / 2);
+   update(kPastTimeout);
+   expectStillActive();
+
+   update(kPastTimeout / 2 + kPastTimeout);
+   const std::optional<Result> result = awaitResult();
+   ASSERT_TRUE(result.has_value());
+   EXPECT_EQ(rclcpp_action::ResultCode::ABORTED, result->code);
+}
+
 TEST_F(GripperActionControllerTest, holds_while_the_reading_is_missing)
 {
    bringUp(true, true);
@@ -409,6 +426,17 @@ TEST_F(GripperActionControllerTest, decides_on_the_starting_value_once_motion_wa
    const std::optional<Result> result = awaitResult();
    ASSERT_TRUE(result.has_value());
    EXPECT_TRUE(result->result->stalled);
+}
+
+TEST_F(GripperActionControllerTest, refuses_a_non_positive_object_status_timeout)
+{
+   for(const double timeout : {0.0, -1.0})
+   {
+      init(true);
+      controller_->get_node()->set_parameter(rclcpp::Parameter("object_status_timeout", timeout));
+      EXPECT_NE(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE, controller_->configure().id()) << timeout;
+      executor_.remove_node(controller_->get_node()->get_node_base_interface());
+   }
 }
 
 TEST_F(GripperActionControllerTest, refuses_to_activate_without_the_object_status)

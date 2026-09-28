@@ -109,6 +109,8 @@ std::optional<Indices> bindInterfaces(const std::vector<InterfaceName>& interfac
 
 std::optional<robotiq_msgs::msg::GripperStatus> decode(const Readings& readings, const rclcpp::Time& time)
 {
+   // Only the four states the message names can be reported: any other value
+   // is not a reading, so the message waits for one that is.
    const std::optional<Robotiq::ObjectDetection> object_detection = toObjectDetection(readings.at(OBJECT_STATUS));
    if(!object_detection)
    {
