@@ -18,7 +18,7 @@ one your robot already runs.
 
 | Distro | Ubuntu | Gripper action | `gripper_cmd` action type |
 |---|---|---|---|
-| Humble | 22.04 Jammy | `position_controllers/GripperActionController` | `control_msgs/action/GripperCommand` |
+| Humble | 22.04 Jammy | `robotiq_controllers/GripperCommandController` | `control_msgs/action/GripperCommand` |
 | Jazzy | 24.04 Noble | `robotiq_controllers/GripperActionController` | `control_msgs/action/ParallelGripperCommand` |
 | Lyrical | 26.04 Resolute | `robotiq_controllers/GripperActionController` | `control_msgs/action/ParallelGripperCommand` |
 
@@ -28,9 +28,10 @@ heads-up rather than a release blocker. Its job does not gate merges. Kilted and
 other non-LTS releases are not built.
 
 The action type differs because `parallel_gripper_controller` does not exist on
-Humble — ROS itself only gained it in Jazzy. `robotiq_control.launch.py` picks the
+Humble — ROS itself only gained it in Jazzy, and Humble's controller extends its
+predecessor, `gripper_controllers`, instead. `robotiq_control.launch.py` picks the
 matching controller config automatically from `$ROS_DISTRO`, and everything else
-(package names, launch files, controller names, topics, the
+(package names, launch files, controller names, the object status parameters, topics, the
 `/robotiq_gripper_controller/gripper_cmd` namespace, the xacro macro arguments)
 is identical across all three. On Humble that makes this repo a drop-in
 replacement for PickNik's `humble` branch — see
@@ -214,15 +215,19 @@ colcon build --packages-up-to robotiq_description robotiq_controllers robotiq_ha
 <!-- Humble EOL: simplify — "staying on Humble" and its table go, and moving to Jazzy or Lyrical becomes the only path out of PickNik's branch. -->
 
 **Staying on Humble: nothing to change.** This repository builds on Humble and
-keeps PickNik's Humble controller and action surface, so your existing action
-clients, launch overrides and xacro arguments work untouched:
+keeps PickNik's Humble action surface, so your existing action clients, launch
+overrides and xacro arguments work untouched:
 
 | | PickNik `humble` | This repository on Humble |
 |---|---|---|
 | ROS distro | Humble | Humble |
 | Serial transport | `serial` package, `vcs import`ed | the `extern/grippers` SDK submodule (libserialport) |
-| `robotiq_gripper_controller` type | `position_controllers/GripperActionController` | `position_controllers/GripperActionController` |
+| `robotiq_gripper_controller` type | `position_controllers/GripperActionController` | `robotiq_controllers/GripperCommandController`, the same controller plus `use_object_status` |
 | `gripper_cmd` action type | `control_msgs/action/GripperCommand` | `control_msgs/action/GripperCommand` |
+
+The one behavioural change is where the result's `stalled` and `reached_goal`
+come from: the gripper's own object detection rather than the joint velocity,
+see [Commanding the gripper](#commanding-the-gripper).
 
 As on PickNik's `humble`, the Humble controller cannot claim the hardware's
 `set_gripper_max_effort` / `set_gripper_max_velocity` interfaces — Humble's
@@ -263,7 +268,7 @@ ros2 action send_goal /robotiq_gripper_controller/gripper_cmd \
 |---|---|
 | `robotiq_driver` | `ros2_control` hardware interface, over the `extern/grippers` SDK (Modbus RTU on serial) |
 | `robotiq_msgs` | Messages the driver and controllers publish |
-| `robotiq_controllers` | Gripper action controller (Jazzy+), activation controller, and the status broadcaster |
+| `robotiq_controllers` | Gripper action controller, activation controller, and the status broadcaster |
 | `robotiq_description` | URDF/xacro, meshes, RViz + bringup launch |
 | `robotiq_hardware_tests` | Hardware integration tests |
 
@@ -329,7 +334,7 @@ it, since Gazebo hosts its own `controller_manager`.
 
 <!-- Humble EOL: simplify — one action type and one example goal remain. -->
 
-On **Jazzy and Lyrical**, `robotiq_gripper_controller` is a `robotiq_controllers/GripperActionController`, the stock `parallel_gripper_action_controller/GripperActionController` with one parameter added (see below), so its action `/robotiq_gripper_controller/gripper_cmd` takes a `control_msgs/action/ParallelGripperCommand` — a `sensor_msgs/JointState` goal (not the older `GripperCommand`). On **Humble** it is `position_controllers/GripperActionController` taking `control_msgs/action/GripperCommand`; see [Supported ROS 2 distros](#supported-ros-2-distros).
+On **Jazzy and Lyrical**, `robotiq_gripper_controller` is a `robotiq_controllers/GripperActionController`, the stock `parallel_gripper_action_controller/GripperActionController` with one parameter added (see below), so its action `/robotiq_gripper_controller/gripper_cmd` takes a `control_msgs/action/ParallelGripperCommand` — a `sensor_msgs/JointState` goal (not the older `GripperCommand`). On **Humble** it is `robotiq_controllers/GripperCommandController`, the stock `position_controllers/GripperActionController` with the same parameter, taking `control_msgs/action/GripperCommand`; see [Supported ROS 2 distros](#supported-ros-2-distros).
 
 The bringup above holds its terminal, so open a **second terminal**, exec into the running container, then send a goal:
 
@@ -352,7 +357,7 @@ ros2 action send_goal /robotiq_gripper_controller/gripper_cmd \
 
 `effort` sets the gripper's grip threshold, as a fraction of `gripper_max_force` written to rFR. It sets the maximum current at the motor, and does **not** directly control the maximum force the gripper applies: that is also largely influenced by the closing speed. Nothing reads a force out of the gripper, and `motor_current` is not convertible to one.
 
-The result's `stalled` and `reached_goal` come from the gripper's own object detection (the `object_status` state interface), which `use_object_status` turns on in `config/robotiq_controllers.yaml`: stopped on an object while opening or closing means stalled, at the requested position means reached. A goal the gripper has not decided within `object_status_timeout` seconds of its acceptance, or of the last motion it reported, is aborted with both flags false; a faulted link looks like this.
+The result's `stalled` and `reached_goal` come from the gripper's own object detection (the `object_status` state interface), which `use_object_status` turns on in `config/robotiq_controllers.yaml` (`robotiq_controllers.humble.yaml` on Humble): stopped on an object while opening or closing means stalled, at the requested position means reached. A goal the gripper has not decided within `object_status_timeout` seconds of its acceptance, or of the last motion it reported, is aborted with both flags false; a faulted link looks like this.
 
 With the flag off, the stock velocity check decides: a goal is reached when the position error is under `goal_tolerance`, stalled when the joint velocity stays under `stall_velocity_threshold` for `stall_timeout`. That is what the `use_fake_hardware:=true` and `sim_topic_based:=true` configs do, because neither plugin exports `object_status` and the controller refuses to activate without it. Keep it off for any hardware plugin of your own that does not report it.
 
