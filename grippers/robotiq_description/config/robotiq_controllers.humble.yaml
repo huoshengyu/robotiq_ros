@@ -2,12 +2,15 @@
 # Humble controller configuration.
 #
 # Humble has no `parallel_gripper_controller` package — it arrived in Jazzy — so
-# the gripper controller here is Humble's stock
-# `position_controllers/GripperActionController` from `gripper_controllers`,
-# taking a `control_msgs/action/GripperCommand` goal. This is what PickNik's
+# the gripper controller here is `robotiq_controllers/GripperCommandController`,
+# Humble's stock `position_controllers/GripperActionController` from
+# `gripper_controllers` with `use_object_status` added, taking a
+# `control_msgs/action/GripperCommand` goal. That is the action PickNik's
 # `humble` branch shipped, so a PickNik/Humble workspace keeps its action clients
-# unchanged. See config/robotiq_controllers.yaml for the Jazzy/Lyrical config,
-# which is selected by launch/robotiq_control.launch.py per $ROS_DISTRO.
+# unchanged. See config/robotiq_controllers.yaml for the Jazzy/Lyrical config;
+# the mock and the topic_based plugin have robotiq_controllers.mock.humble.yaml
+# and robotiq_controllers.topic_based.humble.yaml. launch/robotiq_control.launch.py
+# selects per $ROS_DISTRO and hardware flag.
 #
 # Consequence, matching PickNik/Humble exactly: this controller cannot claim the
 # hardware's `set_gripper_max_effort` / `set_gripper_max_velocity` command
@@ -22,7 +25,7 @@ controller_manager:
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
     robotiq_gripper_controller:
-      type: position_controllers/GripperActionController
+      type: robotiq_controllers/GripperCommandController
     robotiq_activation_controller:
       type: robotiq_controllers/RobotiqActivationController
     robotiq_gripper_status_broadcaster:
@@ -37,6 +40,10 @@ robotiq_gripper_controller:
     allow_stalling: true
     stall_timeout: 0.05
     goal_tolerance: 0.02
+    use_object_status: true
+    # Aborts a goal the gripper has not decided within this many seconds of
+    # its acceptance or of the last motion seen.
+    object_status_timeout: 10.0
 
 robotiq_activation_controller:
   ros__parameters:

@@ -2,11 +2,11 @@
 # Humble controller configuration for the topic_based_ros2_control plugin
 # (`sim_topic_based:=true`).
 # Not for the `use_fake_hardware` mock, which teleports to the commanded
-# position and keeps robotiq_controllers.humble.yaml. Same controller as
-# that file — Humble's stock
-# position_controllers/GripperActionController, since parallel_gripper_controller
-# only arrived in Jazzy — with the departures robotiq_controllers.topic_based.yaml
-# explains: no activation controller (no reactivate GPIO to claim), a status
+# position and has robotiq_controllers.mock.humble.yaml. Same controller as
+# robotiq_controllers.humble.yaml — robotiq_controllers/GripperCommandController,
+# on Humble's stock position_controllers/GripperActionController, since
+# parallel_gripper_controller only arrived in Jazzy — with the departures
+# robotiq_controllers.topic_based.yaml explains: no activation controller (no reactivate GPIO to claim), a status
 # broadcaster that activates with nothing to publish, and a stall that aborts
 # rather than succeeds (a simulator without joint velocities would otherwise
 # pass every failed grasp).
@@ -16,7 +16,7 @@ controller_manager:
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
     robotiq_gripper_controller:
-      type: position_controllers/GripperActionController
+      type: robotiq_controllers/GripperCommandController
     robotiq_gripper_status_broadcaster:
       type: robotiq_controllers/GripperStatusBroadcaster
 
@@ -30,3 +30,4 @@ robotiq_gripper_controller:
     stall_timeout: 0.5
     stall_velocity_threshold: 0.05
     goal_tolerance: 0.02
+    use_object_status: false  # the plugin exports no object_status

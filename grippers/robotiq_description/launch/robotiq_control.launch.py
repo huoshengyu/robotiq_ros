@@ -62,11 +62,9 @@ CONTROLLERS_FILES = {
     "mock": "robotiq_controllers.mock.yaml",
     "topic_based": "robotiq_controllers.topic_based.yaml",
 }
-# Humble's stock gripper controller has no object status parameter to turn off,
-# so the mock shares the driver's config there.
 HUMBLE_CONTROLLERS_FILES = {
     "driver": "robotiq_controllers.humble.yaml",
-    "mock": "robotiq_controllers.humble.yaml",
+    "mock": "robotiq_controllers.mock.humble.yaml",
     "topic_based": "robotiq_controllers.topic_based.humble.yaml",
 }
 
