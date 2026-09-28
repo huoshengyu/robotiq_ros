@@ -34,10 +34,9 @@
 #include <functional>
 #include <optional>
 
-#include <Robotiq/gripper/status.hpp>
-
 #include "hardware_interface/loaned_state_interface.hpp"
 #include "parallel_gripper_controller/parallel_gripper_action_controller.hpp"
+#include "robotiq_controllers/object_status_goal.hpp"
 
 namespace robotiq_controllers {
 
@@ -56,13 +55,12 @@ private:
    using Base = parallel_gripper_action_controller::GripperActionController;
 
    void decideFromObjectStatus(const rclcpp::Time& time);
-   void finish(const RealtimeGoalHandlePtr& goal, bool reached_goal, bool stalled);
+   void finish(const RealtimeGoalHandlePtr& goal, const object_status_goal::Outcome& outcome);
 
    bool use_object_status_ = false;
    double object_status_timeout_ = 0.0;
    std::optional<std::reference_wrapper<hardware_interface::LoanedStateInterface>> object_status_;
    RealtimeGoalHandlePtr tracked_goal_;
-   rclcpp::Time timed_from_;
-   std::optional<Robotiq::ObjectDetection> baseline_;
+   object_status_goal::Verdict verdict_;
 };
 } // namespace robotiq_controllers

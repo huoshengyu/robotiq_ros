@@ -28,28 +28,20 @@
 
 #include "robotiq_controllers/gripper_action_controller.hpp"
 
-#include <algorithm>
 #include <exception>
 #include <limits>
-#include <string>
 
 #include "robotiq_controllers/gripper_status.hpp"
 #include "robotiq_controllers/ros2_control_compat.hpp"
 
 namespace robotiq_controllers {
-namespace {
-constexpr const char* kUseObjectStatusParameter = "use_object_status";
-constexpr const char* kObjectStatusTimeoutParameter = "object_status_timeout";
-constexpr double kDefaultObjectStatusTimeout = 10.0;
-constexpr const char* kObjectStatusInterface = gripper_status::kInterfaceNames.at(gripper_status::OBJECT_STATUS);
-} // namespace
 
 controller_interface::InterfaceConfiguration GripperActionController::state_interface_configuration() const
 {
    controller_interface::InterfaceConfiguration configuration = Base::state_interface_configuration();
    if(use_object_status_)
    {
-      configuration.names.push_back(params_.joint + "/" + kObjectStatusInterface);
+      configuration.names.push_back(object_status_goal::interfaceName(params_.joint));
    }
    return configuration;
 }
@@ -82,41 +74,16 @@ void GripperActionController::decideFromObjectStatus(const rclcpp::Time& time)
    if(goal != tracked_goal_)
    {
       tracked_goal_ = goal;
-      timed_from_ = time;
-      // gOBJ still holds the previous goal's verdict until the gripper acts on
-      // the new target, so only a change from this reading counts.
-      baseline_ = detection;
+      verdict_.accept(time, detection, object_status_timeout_);
       return;
    }
-   if(!baseline_)
+   if(const std::optional<object_status_goal::Outcome> outcome = verdict_.decide(time, detection))
    {
-      // No reading at acceptance: the first one stands in for it.
-      baseline_ = detection;
-   }
-   else if(detection && detection != baseline_)
-   {
-      if(detection == Robotiq::ObjectDetection::Moving)
-      {
-         // Motion seen: whatever the gripper settles on next is this goal's
-         // verdict, even the value it started from, as when it tightens on the
-         // object it already held.
-         baseline_ = detection;
-         timed_from_ = time;
-      }
-      else
-      {
-         const bool reached = detection == Robotiq::ObjectDetection::AtRequestedPosition;
-         finish(goal, reached, !reached);
-         return;
-      }
-   }
-   if((time - timed_from_).seconds() >= object_status_timeout_)
-   {
-      finish(goal, false, false);
+      finish(goal, outcome.value());
    }
 }
 
-void GripperActionController::finish(const RealtimeGoalHandlePtr& goal, bool reached_goal, bool stalled)
+void GripperActionController::finish(const RealtimeGoalHandlePtr& goal, const object_status_goal::Outcome& outcome)
 {
    const std::optional<double> position = compat::getValue(joint_position_state_interface_->get());
    if(!position)
@@ -125,9 +92,9 @@ void GripperActionController::finish(const RealtimeGoalHandlePtr& goal, bool rea
    }
    pre_alloc_result_->state.position[0] = position.value();
    pre_alloc_result_->state.effort[0] = computed_command_;
-   pre_alloc_result_->reached_goal = reached_goal;
-   pre_alloc_result_->stalled = stalled;
-   if(reached_goal || (stalled && params_.allow_stalling))
+   pre_alloc_result_->reached_goal = outcome.reached_goal;
+   pre_alloc_result_->stalled = outcome.stalled;
+   if(outcome.reached_goal || (outcome.stalled && params_.allow_stalling))
    {
       goal->setSucceeded(pre_alloc_result_);
    }
@@ -146,8 +113,9 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Grippe
    }
    try
    {
-      use_object_status_ = auto_declare<bool>(kUseObjectStatusParameter, false);
-      object_status_timeout_ = auto_declare<double>(kObjectStatusTimeoutParameter, kDefaultObjectStatusTimeout);
+      use_object_status_ = auto_declare<bool>(object_status_goal::kUseParameter, false);
+      object_status_timeout_ =
+         auto_declare<double>(object_status_goal::kTimeoutParameter, object_status_goal::kDefaultTimeout);
    }
    catch(const std::exception& e)
    {
@@ -165,13 +133,13 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Grippe
    {
       return result;
    }
-   use_object_status_ = get_node()->get_parameter(kUseObjectStatusParameter).as_bool();
-   object_status_timeout_ = get_node()->get_parameter(kObjectStatusTimeoutParameter).as_double();
+   use_object_status_ = get_node()->get_parameter(object_status_goal::kUseParameter).as_bool();
+   object_status_timeout_ = get_node()->get_parameter(object_status_goal::kTimeoutParameter).as_double();
    if(!(object_status_timeout_ > 0.0))
    {
       RCLCPP_ERROR(get_node()->get_logger(),
                    "%s must be positive, got %g.",
-                   kObjectStatusTimeoutParameter,
+                   object_status_goal::kTimeoutParameter,
                    object_status_timeout_);
       return CallbackReturn::ERROR;
    }
@@ -187,23 +155,11 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Grippe
       return result;
    }
 
-   const auto object_status =
-      std::find_if(state_interfaces_.begin(),
-                   state_interfaces_.end(),
-                   [this](const hardware_interface::LoanedStateInterface& i) {
-                      return i.get_prefix_name() == params_.joint && i.get_interface_name() == kObjectStatusInterface;
-                   });
-   if(object_status == state_interfaces_.end())
+   object_status_ = object_status_goal::findInterface(state_interfaces_, params_.joint, get_node()->get_logger());
+   if(!object_status_)
    {
-      RCLCPP_ERROR(get_node()->get_logger(),
-                   "%s is set but joint '%s' exports no %s. Mock and topic-based hardware do not report it; "
-                   "use the driver against a gripper or its simulation, or unset the parameter.",
-                   kUseObjectStatusParameter,
-                   params_.joint.c_str(),
-                   kObjectStatusInterface);
       return CallbackReturn::ERROR;
    }
-   object_status_ = *object_status;
    return CallbackReturn::SUCCESS;
 }
 
@@ -212,7 +168,6 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Grippe
 {
    object_status_.reset();
    tracked_goal_.reset();
-   baseline_.reset();
    return Base::on_deactivate(previous_state);
 }
 } // namespace robotiq_controllers

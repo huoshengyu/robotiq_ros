@@ -343,33 +343,6 @@ TEST_F(GripperActionControllerTest, reports_reached_at_the_requested_position)
    EXPECT_FALSE(result->result->stalled);
 }
 
-TEST_F(GripperActionControllerTest, decides_on_a_direct_change_between_settled_states)
-{
-   bringUp();
-   object_status_ = kAtRequestedPosition;
-   sendGoal(0.5);
-   object_status_ = kDetectedWhileClosing;
-
-   const std::optional<Result> result = awaitResult();
-   ASSERT_TRUE(result.has_value());
-   EXPECT_TRUE(result->result->stalled);
-}
-
-TEST_F(GripperActionControllerTest, takes_the_first_reading_after_acceptance_as_the_baseline)
-{
-   bringUp();
-   object_status_ = kNaN;
-   sendGoal(0.5);
-   expectStillActive();
-   object_status_ = kAtRequestedPosition;
-   expectStillActive();
-
-   object_status_ = kDetectedWhileClosing;
-   const std::optional<Result> result = awaitResult();
-   ASSERT_TRUE(result.has_value());
-   EXPECT_TRUE(result->result->stalled);
-}
-
 TEST_F(GripperActionControllerTest, reports_the_gripper_verdict_over_the_goal_tolerance)
 {
    bringUp(Config{}.useObjectStatus().exportJointObjectStatus());
@@ -405,37 +378,6 @@ TEST_F(GripperActionControllerTest, aborts_a_goal_the_gripper_never_decides)
    expectStillActive();
 }
 
-TEST_F(GripperActionControllerTest, times_a_goal_from_the_last_motion_seen)
-{
-   bringUp();
-   object_status_ = kAtRequestedPosition;
-   sendGoal(0.5);
-   object_status_ = kMoving;
-   update(kWithinTimeout);
-   // Past the acceptance's deadline, within the motion's.
-   update(kPastTimeout);
-   expectStillActive();
-
-   update(kWithinTimeout + kPastTimeout);
-   const std::optional<Result> result = awaitResult();
-   ASSERT_TRUE(result.has_value());
-   EXPECT_EQ(rclcpp_action::ResultCode::ABORTED, result->code);
-}
-
-TEST_F(GripperActionControllerTest, holds_while_the_reading_is_missing)
-{
-   bringUp();
-   object_status_ = kMoving;
-   sendGoal(0.5);
-   object_status_ = kNaN;
-   expectStillActive();
-
-   object_status_ = kAtRequestedPosition;
-   const std::optional<Result> result = awaitResult();
-   ASSERT_TRUE(result.has_value());
-   EXPECT_TRUE(result->result->reached_goal);
-}
-
 TEST_F(GripperActionControllerTest, takes_a_new_baseline_for_the_next_goal)
 {
    bringUp();
@@ -454,25 +396,6 @@ TEST_F(GripperActionControllerTest, takes_a_new_baseline_for_the_next_goal)
    ASSERT_TRUE(result.has_value());
    EXPECT_TRUE(result->result->reached_goal);
    EXPECT_FALSE(result->result->stalled);
-}
-
-TEST_F(GripperActionControllerTest, decides_on_the_starting_value_once_motion_was_seen)
-{
-   bringUp();
-   object_status_ = kMoving;
-   sendGoal(0.5);
-   object_status_ = kDetectedWhileClosing;
-   ASSERT_TRUE(awaitResult().has_value());
-
-   sendGoal(0.6);
-   expectStillActive();
-   object_status_ = kMoving;
-   expectStillActive();
-
-   object_status_ = kDetectedWhileClosing;
-   const std::optional<Result> result = awaitResult();
-   ASSERT_TRUE(result.has_value());
-   EXPECT_TRUE(result->result->stalled);
 }
 
 TEST_F(GripperActionControllerTest, refuses_a_non_positive_object_status_timeout)

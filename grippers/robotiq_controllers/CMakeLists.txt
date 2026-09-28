@@ -33,6 +33,7 @@ include_directories(include)
 add_library(${PROJECT_NAME} SHARED
   src/gripper_status.cpp
   src/gripper_status_broadcaster.cpp
+  src/object_status_goal.cpp
   src/robotiq_activation_controller.cpp
 )
 
