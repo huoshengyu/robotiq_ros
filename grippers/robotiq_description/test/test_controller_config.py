@@ -74,11 +74,13 @@ TOPIC_BASED_OF = {
 
 # Humble EOL: simplify — MOCK_OF collapses to the one Jazzy entry.
 JAZZY_MOCK_CONFIG = CONFIG_DIR / "robotiq_controllers.mock.yaml"
+# Humble EOL: delete.
+HUMBLE_MOCK_CONFIG = CONFIG_DIR / "robotiq_controllers.mock.humble.yaml"
+MOCK_CONFIGS = (JAZZY_MOCK_CONFIG, HUMBLE_MOCK_CONFIG)
 MOCK_OF = {
     JAZZY_CONFIG: JAZZY_MOCK_CONFIG,
-    HUMBLE_CONFIG: HUMBLE_CONFIG,
+    HUMBLE_CONFIG: HUMBLE_MOCK_CONFIG,
 }
-MOCK_CONFIGS = (JAZZY_MOCK_CONFIG,)
 
 # Names exported by robotiq_driver's hardware interface for the joint it is
 # given. Kept in sync by robotiq_driver's test_robotiq_gripper_hardware_interface,
@@ -102,6 +104,7 @@ CONTROLLER_MANAGER_SETTINGS = {
         "enforce_command_limits",
         "hardware_components_initial_state",
     },
+    HUMBLE_MOCK_CONFIG: {"update_rate"},
     JAZZY_TOPIC_BASED_CONFIG: {"update_rate", "enforce_command_limits"},
     HUMBLE_TOPIC_BASED_CONFIG: {"update_rate"},
 }
@@ -115,13 +118,13 @@ def exported_command_interfaces(joint):
     }
 
 
-# Plugin the launch expects per distro. Humble's stock controller takes a
+# Plugin the launch expects per distro. Humble's controller takes a
 # control_msgs/GripperCommand goal, matching PickNik's humble branch; Jazzy and
 # newer take ParallelGripperCommand.
 # Humble EOL: simplify — one plugin remains, so this mapping collapses.
 EXPECTED_CONTROLLER_TYPES = {
     JAZZY_CONFIG: "robotiq_controllers/GripperActionController",
-    HUMBLE_CONFIG: "position_controllers/GripperActionController",
+    HUMBLE_CONFIG: "robotiq_controllers/GripperCommandController",
 }
 EXPECTED_CONTROLLER_TYPES.update(
     {
@@ -169,23 +172,25 @@ def test_claimed_interfaces_follow_the_joint(joint):
     assert claimed <= exported_command_interfaces(joint)
 
 
-def test_jazzy_driver_config_uses_the_object_status():
-    params = gripper_controller_params(JAZZY_CONFIG)
+@pytest.mark.parametrize("config", ALL_CONFIGS)
+def test_driver_configs_use_the_object_status(config):
+    params = gripper_controller_params(config)
     assert params["use_object_status"] is True
 
 
-@pytest.mark.parametrize("config", (JAZZY_MOCK_CONFIG, JAZZY_TOPIC_BASED_CONFIG))
-def test_jazzy_sim_configs_spell_out_use_object_status_off(config):
+@pytest.mark.parametrize("config", MOCK_CONFIGS + TOPIC_BASED_CONFIGS)
+def test_sim_configs_spell_out_use_object_status_off(config):
     # Spelled out, so that a reader of the config need not know the
     # controller's default.
     params = gripper_controller_params(config)
     assert params["use_object_status"] is False
 
 
-def test_mock_config_is_the_driver_config_without_the_object_status():
+@pytest.mark.parametrize("config", ALL_CONFIGS)
+def test_mock_config_is_the_driver_config_without_the_object_status(config):
     # object_status_timeout only means something with the flag on.
-    driver = load(JAZZY_CONFIG)
-    mock = load(JAZZY_MOCK_CONFIG)
+    driver = load(config)
+    mock = load(MOCK_OF[config])
     assert mock["controller_manager"] == driver["controller_manager"]
     assert (
         mock["robotiq_activation_controller"] == driver["robotiq_activation_controller"]
@@ -198,10 +203,11 @@ def test_mock_config_is_the_driver_config_without_the_object_status():
 
 
 # Humble EOL: delete this test.
-def test_humble_config_claims_no_unsupported_interfaces():
+@pytest.mark.parametrize("config", (HUMBLE_CONFIG, HUMBLE_MOCK_CONFIG))
+def test_humble_configs_claim_no_unsupported_interfaces(config):
     # Humble's gripper_controllers declares neither parameter; leaving them in
     # would read as working speed/force control that Humble silently ignores.
-    params = gripper_controller_params(HUMBLE_CONFIG)
+    params = gripper_controller_params(config)
     assert "max_effort_interface" not in params
     assert "max_velocity_interface" not in params
 

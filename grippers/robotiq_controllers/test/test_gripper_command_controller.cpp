@@ -26,14 +26,49 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-//! The ParallelGripperCommand controller of Jazzy and later, deciding stall and
-//! goal states from the gripper's own object detection.
+// Humble EOL: delete this file.
 
-#pragma once
+#include <string>
 
-#include "parallel_gripper_controller/parallel_gripper_action_controller.hpp"
-#include "robotiq_controllers/object_status_controller.hpp"
+#include <control_msgs/action/gripper_command.hpp>
 
-namespace robotiq_controllers {
-using GripperActionController = ObjectStatusController<parallel_gripper_action_controller::GripperActionController>;
-} // namespace robotiq_controllers
+#include <robotiq_controllers/gripper_command_controller.hpp>
+
+#include "object_status_controller_test.hpp"
+
+namespace robotiq_controllers::test {
+namespace {
+struct GripperCommandTraits
+{
+   using Controller = GripperCommandController;
+   using Action = control_msgs::action::GripperCommand;
+   static constexpr const char* kAction = "GripperCommand";
+   static constexpr const char* kName = "test_gripper_command_controller";
+
+   static Action::Goal goal(const std::string&, double position)
+   {
+      Action::Goal goal;
+      goal.command.position = position;
+      goal.command.max_effort = 50.0;
+      return goal;
+   }
+   static double position(const Action::Result& result) { return result.position; }
+};
+
+INSTANTIATE_TYPED_TEST_SUITE_P(GripperCommandController,
+                               ObjectStatusControllerTest,
+                               ::testing::Types<GripperCommandTraits>,
+                               NamedByAction);
+} // namespace
+} // namespace robotiq_controllers::test
+
+// Not gtest_main: the tests create nodes, so rclcpp must be up before the first
+// and down after the last.
+int main(int argc, char** argv)
+{
+   ::testing::InitGoogleTest(&argc, argv);
+   rclcpp::init(argc, argv);
+   const int result = RUN_ALL_TESTS();
+   rclcpp::shutdown();
+   return result;
+}

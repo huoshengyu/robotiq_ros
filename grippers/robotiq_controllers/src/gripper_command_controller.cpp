@@ -26,14 +26,10 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-//! The ParallelGripperCommand controller of Jazzy and later, deciding stall and
-//! goal states from the gripper's own object detection.
+// Humble EOL: delete this file.
 
-#pragma once
+#include "robotiq_controllers/gripper_command_controller.hpp"
 
-#include "parallel_gripper_controller/parallel_gripper_action_controller.hpp"
-#include "robotiq_controllers/object_status_controller.hpp"
+#include "pluginlib/class_list_macros.hpp"
 
-namespace robotiq_controllers {
-using GripperActionController = ObjectStatusController<parallel_gripper_action_controller::GripperActionController>;
-} // namespace robotiq_controllers
+PLUGINLIB_EXPORT_CLASS(robotiq_controllers::GripperCommandController, controller_interface::ControllerInterface)

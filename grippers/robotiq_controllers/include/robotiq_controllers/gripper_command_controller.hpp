@@ -26,14 +26,18 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-//! The ParallelGripperCommand controller of Jazzy and later, deciding stall and
-//! goal states from the gripper's own object detection.
+//! The GripperCommand counterpart of GripperActionController, on Humble's stock
+//! controller: parallel_gripper_controller only exists from Jazzy on.
+//! Humble EOL: delete this file with its source, test and plugin description;
+//! GripperActionController is the one gripper controller left.
 
 #pragma once
 
-#include "parallel_gripper_controller/parallel_gripper_action_controller.hpp"
+#include "gripper_controllers/gripper_action_controller.hpp"
+#include "hardware_interface/types/hardware_interface_type_values.hpp"
 #include "robotiq_controllers/object_status_controller.hpp"
 
 namespace robotiq_controllers {
-using GripperActionController = ObjectStatusController<parallel_gripper_action_controller::GripperActionController>;
+using GripperCommandController =
+   ObjectStatusController<gripper_action_controller::GripperActionController<hardware_interface::HW_IF_POSITION>>;
 } // namespace robotiq_controllers

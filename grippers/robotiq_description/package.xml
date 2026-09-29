@@ -28,9 +28,9 @@
        status broadcaster from this package. -->
   <exec_depend>robotiq_controllers</exec_depend>
 
-  <!-- Gripper action controller: parallel_gripper_controller is Jazzy and newer;
-       Humble only has gripper_controllers. config/robotiq_controllers*.yaml pick
-       the matching plugin.
+  <!-- The gripper action controller in config/robotiq_controllers*.yaml comes
+       from robotiq_controllers, on parallel_gripper_controller from Jazzy on and
+       on gripper_controllers on Humble.
        Humble EOL: simplify — delete the gripper_controllers line and the
        condition on the other. -->
   <exec_depend condition="$ROS_DISTRO != humble">parallel_gripper_controller</exec_depend>

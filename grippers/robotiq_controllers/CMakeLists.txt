@@ -33,6 +33,7 @@ include_directories(include)
 add_library(${PROJECT_NAME} SHARED
   src/gripper_status.cpp
   src/gripper_status_broadcaster.cpp
+  src/object_status_goal.cpp
   src/robotiq_activation_controller.cpp
 )
 
@@ -58,8 +59,17 @@ target_link_libraries(${PROJECT_NAME}
 pluginlib_export_plugin_description_file(controller_interface controller_plugins.xml)
 
 # The gripper action controller derives from parallel_gripper_controller, which
-# arrived in Jazzy. Humble EOL: simplify — build and register it unconditionally.
-if(NOT "$ENV{ROS_DISTRO}" STREQUAL "humble")
+# arrived in Jazzy; on Humble its counterpart derives from the predecessor,
+# gripper_controllers. Humble EOL: simplify — keep the else branch, unconditionally.
+if("$ENV{ROS_DISTRO}" STREQUAL "humble")
+  find_package(gripper_controllers REQUIRED)
+  target_sources(${PROJECT_NAME} PRIVATE src/gripper_command_controller.cpp)
+  target_link_libraries(${PROJECT_NAME}
+    gripper_controllers::gripper_action_controller
+  )
+  list(APPEND THIS_PACKAGE_INCLUDE_DEPENDS gripper_controllers)
+  pluginlib_export_plugin_description_file(controller_interface gripper_command_controller_plugins.xml)
+else()
   find_package(parallel_gripper_controller REQUIRED)
   target_sources(${PROJECT_NAME} PRIVATE src/gripper_action_controller.cpp)
   target_link_libraries(${PROJECT_NAME}
