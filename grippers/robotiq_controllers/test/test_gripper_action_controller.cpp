@@ -34,7 +34,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include <control_msgs/action/parallel_gripper_command.hpp>
@@ -53,17 +52,68 @@ constexpr const char* kJoint = "robotiq_85_left_knuckle_joint";
 constexpr unsigned int kUpdateRate = 100;
 constexpr double kGoalTolerance = 0.02;
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
-// Past object_status_timeout, which the tests leave at its default.
-constexpr double kPastTimeout = 11.0;
+// object_status_timeout is left at its default; the update times are relative
+// to what the timeout is measured from.
+constexpr double kObjectStatusTimeout = 10.0;
+constexpr double kWithinTimeout = kObjectStatusTimeout / 2;
+constexpr double kPastTimeout = kObjectStatusTimeout + 1.0;
+// A stock stall timeout no test outlasts.
+constexpr double kStockStallNever = 3600.0;
 
 constexpr double kMoving = static_cast<double>(Robotiq::ObjectDetection::Moving);
-constexpr double kDetectedWhileOpening = static_cast<double>(Robotiq::ObjectDetection::DetectedWhileOpening);
 constexpr double kDetectedWhileClosing = static_cast<double>(Robotiq::ObjectDetection::DetectedWhileClosing);
 constexpr double kAtRequestedPosition = static_cast<double>(Robotiq::ObjectDetection::AtRequestedPosition);
 
-using Action = control_msgs::action::ParallelGripperCommand;
-using ClientGoalHandle = rclcpp_action::ClientGoalHandle<Action>;
+using ParallelGripperCommand = control_msgs::action::ParallelGripperCommand;
+using ClientGoalHandle = rclcpp_action::ClientGoalHandle<ParallelGripperCommand>;
 using Result = ClientGoalHandle::WrappedResult;
+
+// The zero stall timeout makes the stock check call a stall on the first
+// cycle, so a goal that survives it was decided by nothing else.
+struct Config
+{
+   bool use_object_status = false;
+   bool export_joint_object_status = false;
+   bool allow_stalling = false;
+   double stall_timeout = 0.0;
+
+   // The driver's configuration.
+   static Config driver() { return Config{}.useObjectStatus().exportJointObjectStatus().allowStalling(); }
+
+   Config& useObjectStatus()
+   {
+      use_object_status = true;
+      return *this;
+   }
+   Config& exportJointObjectStatus()
+   {
+      export_joint_object_status = true;
+      return *this;
+   }
+   Config& allowStalling()
+   {
+      allow_stalling = true;
+      return *this;
+   }
+   Config& stallTimeout(double seconds)
+   {
+      stall_timeout = seconds;
+      return *this;
+   }
+};
+
+// The controller clears the goal it holds the moment it decides it, so a test
+// can ask synchronously, without waiting for the result to reach a client.
+class TestableController : public GripperActionController
+{
+public:
+   bool holdsGoal()
+   {
+      RealtimeGoalHandlePtr goal;
+      rt_active_goal_.get([&](const RealtimeGoalHandlePtr& active) { goal = active; });
+      return goal != nullptr;
+   }
+};
 
 class GripperActionControllerTest : public ::testing::Test
 {
@@ -72,28 +122,29 @@ protected:
    {
       client_node_ = std::make_shared<rclcpp::Node>("gripper_action_client");
       executor_.add_node(client_node_);
-      client_ = rclcpp_action::create_client<Action>(client_node_, std::string{"/"} + kControllerName + "/gripper_cmd");
+      client_ =
+         rclcpp_action::create_client<ParallelGripperCommand>(client_node_,
+                                                              std::string{"/"} + kControllerName + "/gripper_cmd");
    }
 
-   // A zero stall timeout makes the stock check call a stall on the first
-   // cycle, so a goal that survives it was decided by nothing else.
-   void init(bool use_object_status, bool allow_stalling = true, double stall_timeout = 0.0)
+   void init(const Config& config)
    {
-      controller_ = std::make_unique<GripperActionController>();
+      controller_ = std::make_unique<TestableController>();
       ASSERT_EQ(controller_interface::return_type::OK,
                 test_compat::init(*controller_,
                                   kControllerName,
                                   kUpdateRate,
                                   {rclcpp::Parameter("joint", kJoint),
-                                   rclcpp::Parameter("use_object_status", use_object_status),
-                                   rclcpp::Parameter("allow_stalling", allow_stalling),
+                                   rclcpp::Parameter("use_object_status", config.use_object_status),
+                                   rclcpp::Parameter("allow_stalling", config.allow_stalling),
                                    rclcpp::Parameter("goal_tolerance", kGoalTolerance),
-                                   rclcpp::Parameter("stall_timeout", stall_timeout),
+                                   rclcpp::Parameter("stall_timeout", config.stall_timeout),
+                                   // Relays a verdict to the client without delaying awaitResult.
                                    rclcpp::Parameter("action_monitor_rate", 1000.0)}));
       executor_.add_node(controller_->get_node()->get_node_base_interface());
    }
 
-   void assign(bool with_object_status)
+   void assign(const Config& config)
    {
       std::vector<hardware_interface::LoanedStateInterface> states;
       std::vector<hardware_interface::LoanedCommandInterface> commands;
@@ -107,7 +158,7 @@ protected:
 
       add(kJoint, "position", &position_);
       add(kJoint, "velocity", &velocity_);
-      if(with_object_status)
+      if(config.export_joint_object_status)
       {
          add(kJoint, "object_status", &object_status_);
       }
@@ -130,10 +181,10 @@ protected:
       controller_->release_interfaces();
    }
 
-   void bringUp(bool use_object_status, bool with_object_status, bool allow_stalling = true, double stall_timeout = 0.0)
+   void bringUp(const Config& config = Config::driver())
    {
-      init(use_object_status, allow_stalling, stall_timeout);
-      assign(with_object_status);
+      init(config);
+      assign(config);
       configure();
       activate();
    }
@@ -157,7 +208,7 @@ protected:
    void sendGoal(double position)
    {
       ASSERT_TRUE(client_->wait_for_action_server(std::chrono::seconds{5}));
-      Action::Goal goal;
+      ParallelGripperCommand::Goal goal;
       goal.command.name = {kJoint};
       goal.command.position = {position};
       auto goal_future = client_->async_send_goal(goal);
@@ -185,25 +236,21 @@ protected:
       return result_future_.get();
    }
 
-   // A goal the controller must leave open: a few cycles, spaced so that the
-   // action monitor timer, at the rate init sets, would have relayed a verdict.
+   // A goal the controller must leave open: one cycle takes the reading in,
+   // the next is the first that could act on it.
    void expectStillActive()
    {
-      for(int cycle = 0; cycle < 3; ++cycle)
-      {
-         update();
-         std::this_thread::sleep_for(std::chrono::milliseconds{2});
-         executor_.spin_some();
-      }
-      EXPECT_FALSE(resultArrived()) << "the goal was decided";
+      update();
+      update();
+      EXPECT_TRUE(controller_->holdsGoal()) << "the goal was decided";
    }
 
-   std::unique_ptr<GripperActionController> controller_;
+   std::unique_ptr<TestableController> controller_;
    std::vector<std::shared_ptr<hardware_interface::StateInterface>> owned_states_;
    std::vector<std::shared_ptr<hardware_interface::CommandInterface>> owned_commands_;
 
    rclcpp::Node::SharedPtr client_node_;
-   rclcpp_action::Client<Action>::SharedPtr client_;
+   rclcpp_action::Client<ParallelGripperCommand>::SharedPtr client_;
    rclcpp::executors::SingleThreadedExecutor executor_;
    ClientGoalHandle::SharedPtr goal_handle_;
    std::shared_future<Result> result_future_;
@@ -216,7 +263,7 @@ protected:
 
 TEST_F(GripperActionControllerTest, claims_the_object_status_only_with_the_flag_on)
 {
-   init(true);
+   init(Config{}.useObjectStatus());
    configure();
    const controller_interface::InterfaceConfiguration with_flag = controller_->state_interface_configuration();
    EXPECT_EQ(controller_interface::interface_configuration_type::INDIVIDUAL, with_flag.type);
@@ -226,7 +273,7 @@ TEST_F(GripperActionControllerTest, claims_the_object_status_only_with_the_flag_
              with_flag.names);
 
    executor_.remove_node(controller_->get_node()->get_node_base_interface());
-   init(false);
+   init(Config{});
    configure();
    const controller_interface::InterfaceConfiguration stock = controller_->state_interface_configuration();
    EXPECT_EQ(controller_interface::interface_configuration_type::INDIVIDUAL, stock.type);
@@ -236,7 +283,7 @@ TEST_F(GripperActionControllerTest, claims_the_object_status_only_with_the_flag_
 
 TEST_F(GripperActionControllerTest, ignores_the_object_status_when_off)
 {
-   bringUp(false, true, true, 3600.0);
+   bringUp(Config{}.exportJointObjectStatus().allowStalling().stallTimeout(kStockStallNever));
    object_status_ = kMoving;
    sendGoal(0.5);
    object_status_ = kDetectedWhileClosing;
@@ -252,7 +299,7 @@ TEST_F(GripperActionControllerTest, ignores_the_object_status_when_off)
 
 TEST_F(GripperActionControllerTest, waits_for_the_status_to_change_from_its_value_at_acceptance)
 {
-   bringUp(true, true);
+   bringUp();
    object_status_ = kAtRequestedPosition;
    sendGoal(0.5);
    expectStillActive();
@@ -271,7 +318,7 @@ TEST_F(GripperActionControllerTest, waits_for_the_status_to_change_from_its_valu
 
 TEST_F(GripperActionControllerTest, aborts_a_stall_without_allow_stalling)
 {
-   bringUp(true, true, false);
+   bringUp(Config{}.useObjectStatus().exportJointObjectStatus());
    object_status_ = kMoving;
    sendGoal(0.5);
    object_status_ = kDetectedWhileClosing;
@@ -284,7 +331,7 @@ TEST_F(GripperActionControllerTest, aborts_a_stall_without_allow_stalling)
 
 TEST_F(GripperActionControllerTest, reports_reached_at_the_requested_position)
 {
-   bringUp(true, true);
+   bringUp();
    object_status_ = kMoving;
    sendGoal(0.5);
    object_status_ = kAtRequestedPosition;
@@ -298,7 +345,7 @@ TEST_F(GripperActionControllerTest, reports_reached_at_the_requested_position)
 
 TEST_F(GripperActionControllerTest, decides_on_a_direct_change_between_settled_states)
 {
-   bringUp(true, true);
+   bringUp();
    object_status_ = kAtRequestedPosition;
    sendGoal(0.5);
    object_status_ = kDetectedWhileClosing;
@@ -310,7 +357,7 @@ TEST_F(GripperActionControllerTest, decides_on_a_direct_change_between_settled_s
 
 TEST_F(GripperActionControllerTest, takes_the_first_reading_after_acceptance_as_the_baseline)
 {
-   bringUp(true, true);
+   bringUp();
    object_status_ = kNaN;
    sendGoal(0.5);
    expectStillActive();
@@ -325,7 +372,7 @@ TEST_F(GripperActionControllerTest, takes_the_first_reading_after_acceptance_as_
 
 TEST_F(GripperActionControllerTest, reports_the_gripper_verdict_over_the_goal_tolerance)
 {
-   bringUp(true, true, false);
+   bringUp(Config{}.useObjectStatus().exportJointObjectStatus());
    object_status_ = kMoving;
    sendGoal(0.5);
    position_ = 0.5;
@@ -340,7 +387,7 @@ TEST_F(GripperActionControllerTest, reports_the_gripper_verdict_over_the_goal_to
 
 TEST_F(GripperActionControllerTest, aborts_a_goal_the_gripper_never_decides)
 {
-   bringUp(true, true);
+   bringUp();
    object_status_ = kDetectedWhileClosing;
    sendGoal(0.5);
    expectStillActive();
@@ -354,22 +401,22 @@ TEST_F(GripperActionControllerTest, aborts_a_goal_the_gripper_never_decides)
 
    // The next goal is timed from its own acceptance.
    sendGoal(0.6);
-   update(kPastTimeout / 2);
+   update(kWithinTimeout);
    expectStillActive();
 }
 
 TEST_F(GripperActionControllerTest, times_a_goal_from_the_last_motion_seen)
 {
-   bringUp(true, true);
+   bringUp();
    object_status_ = kAtRequestedPosition;
    sendGoal(0.5);
-   update(kPastTimeout / 2);
    object_status_ = kMoving;
-   update(kPastTimeout / 2);
+   update(kWithinTimeout);
+   // Past the acceptance's deadline, within the motion's.
    update(kPastTimeout);
    expectStillActive();
 
-   update(kPastTimeout / 2 + kPastTimeout);
+   update(kWithinTimeout + kPastTimeout);
    const std::optional<Result> result = awaitResult();
    ASSERT_TRUE(result.has_value());
    EXPECT_EQ(rclcpp_action::ResultCode::ABORTED, result->code);
@@ -377,7 +424,7 @@ TEST_F(GripperActionControllerTest, times_a_goal_from_the_last_motion_seen)
 
 TEST_F(GripperActionControllerTest, holds_while_the_reading_is_missing)
 {
-   bringUp(true, true);
+   bringUp();
    object_status_ = kMoving;
    sendGoal(0.5);
    object_status_ = kNaN;
@@ -391,7 +438,7 @@ TEST_F(GripperActionControllerTest, holds_while_the_reading_is_missing)
 
 TEST_F(GripperActionControllerTest, takes_a_new_baseline_for_the_next_goal)
 {
-   bringUp(true, true);
+   bringUp();
    object_status_ = kMoving;
    sendGoal(0.5);
    object_status_ = kDetectedWhileClosing;
@@ -411,7 +458,7 @@ TEST_F(GripperActionControllerTest, takes_a_new_baseline_for_the_next_goal)
 
 TEST_F(GripperActionControllerTest, decides_on_the_starting_value_once_motion_was_seen)
 {
-   bringUp(true, true);
+   bringUp();
    object_status_ = kMoving;
    sendGoal(0.5);
    object_status_ = kDetectedWhileClosing;
@@ -432,7 +479,7 @@ TEST_F(GripperActionControllerTest, refuses_a_non_positive_object_status_timeout
 {
    for(const double timeout : {0.0, -1.0})
    {
-      init(true);
+      init(Config{}.useObjectStatus());
       controller_->get_node()->set_parameter(rclcpp::Parameter("object_status_timeout", timeout));
       EXPECT_NE(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE, controller_->configure().id()) << timeout;
       executor_.remove_node(controller_->get_node()->get_node_base_interface());
@@ -441,22 +488,22 @@ TEST_F(GripperActionControllerTest, refuses_a_non_positive_object_status_timeout
 
 TEST_F(GripperActionControllerTest, refuses_to_activate_without_the_object_status)
 {
-   init(true);
-   assign(false);
+   init(Config{}.useObjectStatus());
+   assign(Config{});
    configure();
    EXPECT_NE(lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE, controller_->get_node()->activate().id());
 }
 
 TEST_F(GripperActionControllerTest, decides_again_after_a_deactivation)
 {
-   bringUp(true, true);
+   bringUp();
    object_status_ = kMoving;
    sendGoal(0.5);
    object_status_ = kDetectedWhileClosing;
    ASSERT_TRUE(awaitResult().has_value());
 
    deactivate();
-   assign(true);
+   assign(Config::driver());
    activate();
    sendGoal(0.0);
    expectStillActive();
@@ -468,6 +515,8 @@ TEST_F(GripperActionControllerTest, decides_again_after_a_deactivation)
 } // namespace
 } // namespace robotiq_controllers::test
 
+// Not gtest_main: the tests create nodes, so rclcpp must be up before the first
+// and down after the last.
 int main(int argc, char** argv)
 {
    ::testing::InitGoogleTest(&argc, argv);
