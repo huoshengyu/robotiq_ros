@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -44,10 +45,18 @@
 // realtime_tools renamed rather than split: Humble offers `tryPublish(msg)`,
 // newer releases `try_publish(msg)`. Both take the message in one call.
 //
+// The stock gripper controllers keep their active goal in a
+// `RealtimeBuffer` on Humble (`readFromNonRT()` / `writeFromNonRT(value)`,
+// blocking) and in a `RealtimeThreadSafeBox` from Jazzy on (`try_get(func)`,
+// which fails rather than block, and `set(func)`). Their action results differ
+// too: Humble's GripperCommand carries a `position` and an `effort`, the
+// ParallelGripperCommand of Jazzy and later a JointState `state`.
+//
 // Humble EOL: delete this header, its test and its CMake entries; the call
-// sites use set_value, get_optional and try_publish directly. The shims are
-// templates so that the branch a distro lacks is never instantiated, a
-// constraint that goes with the last of them.
+// sites use set_value, get_optional, try_publish, try_get, set and the
+// JointState result directly. The shims are templates so that the branch a
+// distro lacks is never instantiated, a constraint that goes with the last of
+// them.
 
 namespace robotiq_controllers::compat {
 namespace detail {
@@ -76,6 +85,26 @@ struct HasTryPublish<PublisherT,
                      MessageT,
                      std::void_t<decltype(std::declval<PublisherT&>().try_publish(std::declval<const MessageT&>()))>>
    : std::true_type
+{
+};
+
+template <typename BoxT, typename = void>
+struct HasReadFromNonRT : std::false_type
+{
+};
+
+template <typename BoxT>
+struct HasReadFromNonRT<BoxT, std::void_t<decltype(std::declval<BoxT&>().readFromNonRT())>> : std::true_type
+{
+};
+
+template <typename ResultT, typename = void>
+struct HasJointState : std::false_type
+{
+};
+
+template <typename ResultT>
+struct HasJointState<ResultT, std::void_t<decltype(std::declval<ResultT&>().state.position)>> : std::true_type
 {
 };
 } // namespace detail
@@ -120,6 +149,53 @@ bool tryPublish(PublisherT& publisher, const MessageT& message)
    else
    {
       return publisher.tryPublish(message);
+   }
+}
+
+/// @returns the held value, or std::nullopt where the box can refuse a locked read.
+template <typename T, typename BoxT>
+std::optional<T> tryGet(BoxT& box)
+{
+   if constexpr(detail::HasReadFromNonRT<BoxT>::value)
+   {
+      return *box.readFromNonRT();
+   }
+   else
+   {
+      std::optional<T> value;
+      if(!box.try_get([&](const T& held) { value = held; }))
+      {
+         return std::nullopt;
+      }
+      return value;
+   }
+}
+
+template <typename T, typename BoxT>
+void set(BoxT& box, T value)
+{
+   if constexpr(detail::HasReadFromNonRT<BoxT>::value)
+   {
+      box.writeFromNonRT(std::move(value));
+   }
+   else
+   {
+      box.set([&](T& held) { held = std::move(value); });
+   }
+}
+
+template <typename ResultT>
+void setResult(ResultT& result, double position, double effort)
+{
+   if constexpr(detail::HasJointState<ResultT>::value)
+   {
+      result.state.position[0] = position;
+      result.state.effort[0] = effort;
+   }
+   else
+   {
+      result.position = position;
+      result.effort = effort;
    }
 }
 } // namespace robotiq_controllers::compat

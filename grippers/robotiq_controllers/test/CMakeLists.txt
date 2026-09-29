@@ -1,7 +1,8 @@
 find_package(ament_cmake_gtest REQUIRED)
 
-# Compat shims over the ros2_control command-handle API. Header-only, so the
-# test needs the include path but nothing to link against.
+# Compat shims over the ros2_control handle, realtime_tools container and
+# gripper action result APIs. Header-only, so the test needs the include path
+# but nothing to link against.
 #
 # Humble EOL: delete this block with the shims and their test.
 ament_add_gtest(test_ros2_control_compat test_ros2_control_compat.cpp)

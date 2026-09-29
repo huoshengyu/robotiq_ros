@@ -35,6 +35,7 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -123,6 +124,57 @@ private:
    std::vector<std::string> published_;
 };
 
+// Humble: the stock gripper controllers keep their goal in a RealtimeBuffer,
+// whose reads block on the lock.
+class OldApiBox
+{
+public:
+   int* readFromNonRT() { return &value_; }
+   void writeFromNonRT(int value) { value_ = value; }
+
+private:
+   int value_ = 0;
+};
+
+// Jazzy and later: a RealtimeThreadSafeBox, whose try_get gives up on a held lock.
+class NewApiBox
+{
+public:
+   bool try_get(const std::function<void(const int&)>& func)
+   {
+      if(!lockable_)
+      {
+         return false;
+      }
+      func(value_);
+      return true;
+   }
+   void set(const std::function<void(int&)>& func) { func(value_); }
+
+   void setLockable(bool lockable) { lockable_ = lockable; }
+
+private:
+   int value_ = 0;
+   bool lockable_ = true;
+};
+
+// Humble's GripperCommand result.
+struct OldApiResult
+{
+   double position = 0.0;
+   double effort = 0.0;
+};
+
+// The ParallelGripperCommand result of Jazzy and later.
+struct NewApiResult
+{
+   struct
+   {
+      std::vector<double> position{0.0};
+      std::vector<double> effort{0.0};
+   } state;
+};
+
 TEST(TestRos2ControlCompat, detects_each_handle_shape)
 {
    EXPECT_FALSE(compat::detail::HasGetOptional<OldApiHandle>::value);
@@ -203,4 +255,57 @@ TEST(TestRos2ControlCompat, new_publisher_api_propagates_a_refused_publish)
    EXPECT_TRUE(publisher.published().empty());
 }
 
+TEST(TestRos2ControlCompat, detects_each_box_shape)
+{
+   EXPECT_TRUE(compat::detail::HasReadFromNonRT<OldApiBox>::value);
+   EXPECT_FALSE(compat::detail::HasReadFromNonRT<NewApiBox>::value);
+}
+
+TEST(TestRos2ControlCompat, old_box_api_round_trips)
+{
+   OldApiBox box;
+
+   compat::set(box, 7);
+   EXPECT_EQ(compat::tryGet<int>(box), std::optional<int>{7});
+}
+
+TEST(TestRos2ControlCompat, new_box_api_round_trips)
+{
+   NewApiBox box;
+
+   compat::set(box, 7);
+   EXPECT_EQ(compat::tryGet<int>(box), std::optional<int>{7});
+}
+
+TEST(TestRos2ControlCompat, new_box_api_gives_up_on_a_held_lock)
+{
+   NewApiBox box;
+   box.setLockable(false);
+
+   EXPECT_EQ(compat::tryGet<int>(box), std::nullopt);
+}
+
+TEST(TestRos2ControlCompat, detects_each_result_shape)
+{
+   EXPECT_FALSE(compat::detail::HasJointState<OldApiResult>::value);
+   EXPECT_TRUE(compat::detail::HasJointState<NewApiResult>::value);
+}
+
+TEST(TestRos2ControlCompat, old_result_api_takes_the_scalars)
+{
+   OldApiResult result;
+
+   compat::setResult(result, 0.25, 12.5);
+   EXPECT_EQ(0.25, result.position);
+   EXPECT_EQ(12.5, result.effort);
+}
+
+TEST(TestRos2ControlCompat, new_result_api_takes_the_joint_state)
+{
+   NewApiResult result;
+
+   compat::setResult(result, 0.25, 12.5);
+   EXPECT_EQ(std::vector<double>{0.25}, result.state.position);
+   EXPECT_EQ(std::vector<double>{12.5}, result.state.effort);
+}
 } // namespace robotiq_controllers::test

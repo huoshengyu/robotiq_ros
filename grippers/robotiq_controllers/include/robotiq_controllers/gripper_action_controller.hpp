@@ -26,41 +26,14 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-//! A customized Robotiq ParallelGripperCommand controller, deciding stall and goal states
-//! from the gripper's own object detection instead of the velocity stall timeout.
+//! The ParallelGripperCommand controller of Jazzy and later, deciding stall and
+//! goal states from the gripper's own object detection.
 
 #pragma once
 
-#include <functional>
-#include <optional>
-
-#include "hardware_interface/loaned_state_interface.hpp"
 #include "parallel_gripper_controller/parallel_gripper_action_controller.hpp"
-#include "robotiq_controllers/object_status_goal.hpp"
+#include "robotiq_controllers/object_status_controller.hpp"
 
 namespace robotiq_controllers {
-
-class GripperActionController : public parallel_gripper_action_controller::GripperActionController
-{
-public:
-   controller_interface::InterfaceConfiguration state_interface_configuration() const override;
-   controller_interface::return_type update(const rclcpp::Time& time, const rclcpp::Duration& period) override;
-
-   CallbackReturn on_init() override;
-   CallbackReturn on_configure(const rclcpp_lifecycle::State& previous_state) override;
-   CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override;
-   CallbackReturn on_deactivate(const rclcpp_lifecycle::State& previous_state) override;
-
-private:
-   using Base = parallel_gripper_action_controller::GripperActionController;
-
-   void decideFromObjectStatus(const rclcpp::Time& time);
-   void finish(const RealtimeGoalHandlePtr& goal, const object_status_goal::Outcome& outcome);
-
-   bool use_object_status_ = false;
-   double object_status_timeout_ = 0.0;
-   std::optional<std::reference_wrapper<hardware_interface::LoanedStateInterface>> object_status_;
-   RealtimeGoalHandlePtr tracked_goal_;
-   object_status_goal::Verdict verdict_;
-};
+using GripperActionController = ObjectStatusController<parallel_gripper_action_controller::GripperActionController>;
 } // namespace robotiq_controllers
