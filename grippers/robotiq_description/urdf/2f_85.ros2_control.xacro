@@ -18,7 +18,10 @@
         gripper_force_multiplier:=0.5
         gripper_max_speed:=0.150
         gripper_max_force:=235.0
-        gripper_closed_position:=0.7929">
+        gripper_closed_position:=0.7929
+        use_socket=false
+        robot_ip='192.168.1.102'
+        robot_port=63352">
 
         <ros2_control name="${name}" type="system">
             <!-- Plugins -->
@@ -35,7 +38,10 @@
                 gripper_force_multiplier="${gripper_force_multiplier}"
                 gripper_max_speed="${gripper_max_speed}"
                 gripper_max_force="${gripper_max_force}"
-                gripper_closed_position="${gripper_closed_position}"/>
+                gripper_closed_position="${gripper_closed_position}"
+                use_socket="${use_socket}"
+                robot_ip="${robot_ip}"
+                robot_port="${robot_port}"/>
 
             <!-- Joint interfaces -->
             <!-- With Gazebo or Hardware, they handle mimic joints, so we only need this command interface activated -->

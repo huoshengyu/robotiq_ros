@@ -43,6 +43,7 @@
 #include <robotiq_driver/gripper_scaling.hpp>
 #include <robotiq_driver/hardware_interface.hpp>
 #include <robotiq_driver/rclcpp_logger.hpp>
+#include <robotiq_driver/urcap_socket_driver.hpp>
 
 #include <Robotiq/gripper/fake/gripper_factory.hpp>
 #include <Robotiq/gripper/to_string.hpp>
@@ -141,6 +142,11 @@ std::unique_ptr<Robotiq::Gripper> RobotiqGripperHardwareInterface::createGripper
    {
       RCLCPP_WARN(kLogger, "You are connected to a dummy driver, not a real gripper.");
       return Robotiq::makeFakeGripper(parameters_.connection, logger_);
+   }
+   if (parameters_.use_socket)
+   {
+      RCLCPP_WARN(kLogger, "Connecting to Robotiq gripper via socket, not serial connection.");
+      return std::make_unique<UrcapSocketDriver>(parameters_.robot_ip, parameters_.robot_port);
    }
    return std::make_unique<Robotiq::Gripper>(parameters_.connection, logger_);
 }

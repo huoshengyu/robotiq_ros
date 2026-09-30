@@ -61,6 +61,11 @@ inline constexpr double kConnectionFrequencyDefault = 100.0;
 inline constexpr double kMaxSpeedDefault = 0.150; // m/s
 inline constexpr double kMaxForceDefault = 235.0; // N
 
+//! Default IP address and port number for socket connection to gripper
+//! gripper_max_speed / gripper_max_force.
+inline constexpr const char* kRobotIPDefault = "192.168.1.102";
+inline constexpr uint16_t kRobotPortDefault = 63352;
+
 struct GripperParameters
 {
    //! Serial link + Modbus addressing, handed straight to Robotiq::Gripper.
@@ -88,6 +93,12 @@ struct GripperParameters
    //! Drive a simulated gripper instead of a real one, for testing without
    //! hardware. The serial settings above are then ignored.
    bool use_dummy = false;
+
+   //! Connect via socket instead of serial connection, such as to bypass ports
+   //! claimed by the Robotiq URCap. The serial settings above are then ignored.
+   bool use_socket = false;
+   std::string robot_ip;
+   uint16_t robot_port;
 };
 
 //! Parse \p info's hardware parameters. Missing parameters keep the defaults

@@ -53,6 +53,9 @@ constexpr const char* kSpeedMultiplierParam = "gripper_speed_multiplier";
 constexpr const char* kForceMultiplierParam = "gripper_force_multiplier";
 constexpr const char* kActivationTimeoutParam = "activation_timeout";
 constexpr const char* kUseDummyParam = "use_dummy";
+constexpr const char* kUseSocketParam = "use_socket";
+constexpr const char* kRobotIPParam = "robot_ip";
+constexpr const char* kRobotPortParam = "robot_port";
 
 //! Whether \p text reads as "no". Anything else — including a bare "true" or
 //! any typo — selects the fake gripper, so the spellings people actually write
@@ -114,6 +117,16 @@ uint32_t asBaudrate(const std::string& text)
       throw std::out_of_range("baudrate must be between 1 and 1000000");
    }
    return static_cast<uint32_t>(value);
+}
+
+uint16_t asRobotPort(const std::string& text)
+{
+   const uint16_t value = asWholeNumber(text);
+   if(value < 0 || value > 65535)
+   {
+      throw std::out_of_range("robot port must be between 0 and 65535");
+   }
+   return static_cast<uint16_t>(value);
 }
 
 double asDouble(const std::string& text)
@@ -191,6 +204,15 @@ GripperParameters parseParameters(const hardware_interface::HardwareInfo& info, 
    const auto use_dummy = info.hardware_parameters.find(kUseDummyParam);
    parameters.use_dummy = use_dummy != info.hardware_parameters.end() && !isFalsey(use_dummy->second);
 
+   const auto use_socket = info.hardware_parameters.find(kUseSocketParam);
+   parameters.use_socket = use_socket != info.hardware_parameters.end() && !isFalsey(use_socket->second);
+   parameters.robot_ip =
+      parameterOr<std::string>(info, logger, kRobotIPParam, kRobotIPDefault, [](const std::string& text) {
+         return text;
+      });
+   parameters.robot_port =
+      parameterOr<uint16_t>(info, logger, kRobotPortParam, kRobotPortDefault, asRobotPort);
+      
    return parameters;
 }
 } // namespace robotiq_driver

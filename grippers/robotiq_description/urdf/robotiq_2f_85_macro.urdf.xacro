@@ -21,7 +21,10 @@
         gripper_force_multiplier:=0.5
         gripper_max_speed:=0.150
         gripper_max_force:=235.0
-        gripper_closed_position:=0.7929">
+        gripper_closed_position:=0.7929
+        use_socket=false
+        robot_ip='192.168.1.102'
+        robot_port=63352">
 
         <!-- PickNik's names for the topic-based path, released in 1.1.0 and
              deprecated since 1.2.0. sim_isaac keeps its old /isaac_joint_* topic
@@ -52,7 +55,10 @@
                 gripper_force_multiplier="${gripper_force_multiplier}"
                 gripper_max_speed="${gripper_max_speed}"
                 gripper_max_force="${gripper_max_force}"
-                gripper_closed_position="${gripper_closed_position}"/>
+                gripper_closed_position="${gripper_closed_position}"
+                use_socket="${use_socket}"
+                robot_ip="${robot_ip}"
+                robot_port="${robot_port}"/>
         </xacro:if>
 
         <link name="${prefix}robotiq_85_base_link">
