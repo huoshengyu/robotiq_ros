@@ -122,9 +122,9 @@ uint32_t asBaudrate(const std::string& text)
 uint16_t asRobotPort(const std::string& text)
 {
    const uint16_t value = asWholeNumber(text);
-   if(value < 0 || value > 65535)
+   if(value == 1 || value > 65535)
    {
-      throw std::out_of_range("robot port must be between 0 and 65535");
+      throw std::out_of_range("robot port must be between 1 and 65535");
    }
    return static_cast<uint16_t>(value);
 }

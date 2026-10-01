@@ -61,6 +61,7 @@ add_library(
   include/robotiq_driver/rclcpp_logger.hpp
   # Humble EOL: delete the next line with the header.
   include/robotiq_driver/ros2_control_compat.hpp
+  include/robotiq_driver/urcap_serial.hpp
   include/robotiq_driver/visibility_control.hpp
   # Signposts for the headers this package used to install, so downstream
   # code that includes one stops with an explanation instead of a
@@ -80,6 +81,7 @@ add_library(
   src/hardware_interface.cpp
   src/hardware_parameters.cpp
   src/rclcpp_logger.cpp
+  src/urcap_serial.cpp
 )
 target_include_directories(
   robotiq_driver

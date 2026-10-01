@@ -37,6 +37,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <string>
 
 #include <Robotiq/gripper/connection_config.hpp>
 
@@ -97,8 +98,8 @@ struct GripperParameters
    //! Connect via socket instead of serial connection, such as to bypass ports
    //! claimed by the Robotiq URCap. The serial settings above are then ignored.
    bool use_socket = false;
-   std::string robot_ip;
-   uint16_t robot_port;
+   std::string robot_ip = kRobotIPDefault;
+   uint16_t robot_port = kRobotPortDefault;
 };
 
 //! Parse \p info's hardware parameters. Missing parameters keep the defaults

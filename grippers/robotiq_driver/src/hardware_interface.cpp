@@ -43,9 +43,10 @@
 #include <robotiq_driver/gripper_scaling.hpp>
 #include <robotiq_driver/hardware_interface.hpp>
 #include <robotiq_driver/rclcpp_logger.hpp>
-#include <robotiq_driver/urcap_socket_driver.hpp>
+#include <robotiq_driver/urcap_serial.hpp>
 
 #include <Robotiq/gripper/fake/gripper_factory.hpp>
+#include <Robotiq/gripper/platform.hpp>
 #include <Robotiq/gripper/to_string.hpp>
 #include <Robotiq/gripper/wait.hpp>
 
@@ -114,12 +115,23 @@ bool declaresOnlySupportedStateInterfaces(const hardware_interface::ComponentInf
 // Shared by the two messages that report whether the link came up. A failed
 // connect is almost always one of these three being wrong, and the SDK logs
 // only the port and baud rate, at debug level.
-std::string describeLink(const Robotiq::ConnectionConfig& connection)
+std::string describeLink(const GripperParameters& parameters)
 {
+   const Robotiq::ConnectionConfig& connection = parameters.connection;
    std::ostringstream text;
    text << connection.serial.port << " at " << connection.serial.baudrate << " bps (slave address 0x" << std::hex
         << std::uppercase << std::setw(2) << std::setfill('0') << static_cast<unsigned>(connection.modbusSlaveAddress)
         << ")";
+   if(parameters.use_socket)
+   {
+      text << "the URCap socket at " << parameters.robot_ip << ":" << parameters.robot_port;
+   }
+   else
+   {
+      text << connection.serial.port << " at " << connection.serial.baudrate << " bps (slave address 0x" << std::hex
+      << std::uppercase << std::setw(2) << std::setfill('0')
+      << static_cast<unsigned>(connection.modbusSlaveAddress) << ")";
+   }
    return text.str();
 }
 
@@ -143,10 +155,22 @@ std::unique_ptr<Robotiq::Gripper> RobotiqGripperHardwareInterface::createGripper
       RCLCPP_WARN(kLogger, "You are connected to a dummy driver, not a real gripper.");
       return Robotiq::makeFakeGripper(parameters_.connection, logger_);
    }
-   if (parameters_.use_socket)
+   if(parameters_.use_socket)
    {
       RCLCPP_WARN(kLogger, "Connecting to Robotiq gripper via socket, not serial connection.");
-      return std::make_unique<UrcapSocketDriver>(parameters_.robot_ip, parameters_.robot_port);
+      // Free-run (0 Hz) is a zero period: each exchange is then paced by the
+      // URCap round trips themselves.
+      const double frequency = parameters_.connection.connectionFrequency;
+      const std::chrono::microseconds exchange_period{frequency > 0.0 ? std::llround(1e6 / frequency) : 0};
+      return std::make_unique<Robotiq::Gripper>(
+         std::make_unique<UrcapSerial>(parameters_.robot_ip,
+                                       parameters_.robot_port,
+                                       parameters_.connection.serial.timeout,
+                                       logger_),
+         parameters_.connection.modbusSlaveAddress,
+         exchange_period,
+         Robotiq::makeDefaultPlatform(),
+         logger_);
    }
    return std::make_unique<Robotiq::Gripper>(parameters_.connection, logger_);
 }
@@ -230,7 +254,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Roboti
       RCLCPP_ERROR(kLogger,
                    "Cannot connect to the Robotiq gripper on %s: %s. Once it is connected, retry with: ros2 control "
                    "set_hardware_component_state '%s' active",
-                   describeLink(parameters_.connection).c_str(),
+                   describeLink(parameters_).c_str(),
                    e.what(),
                    info_.name.c_str());
       return CallbackReturn::ERROR;
@@ -238,7 +262,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Roboti
 
    RCLCPP_INFO(kLogger,
                "Connected to the Robotiq gripper on %s, exchanging at %.1f Hz.",
-               describeLink(parameters_.connection).c_str(),
+               describeLink(parameters_).c_str(),
                parameters_.connection.connectionFrequency);
    return CallbackReturn::SUCCESS;
 }
