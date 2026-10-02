@@ -175,7 +175,7 @@ void UrcapSerial::close()
     pendingReply_.clear();
 }
 
-std::vector<uint8_t> UrcapSerial::read(size_t size, std::chrono::milliseconds /timeout/)
+std::vector<uint8_t> UrcapSerial::read(size_t size, std::chrono::milliseconds /*timeout*/)
 {
     // write() has already produced the whole reply, so there is nothing to
     // wait for: a short or empty answer is what nanoMODBUS reads as a timeout.
@@ -281,7 +281,7 @@ std::vector<uint8_t> UrcapSerial::handleRequest(const std::vector<uint8_t>& requ
 
 void UrcapSerial::applyCommand(const Robotiq::GripperCommand& command)
 {
-    static constexpr std::array<const char, kFieldCount> kNames{"POS", "SPE", "FOR", "ATR", "ADR", "GTO", "ACT"};
+    static constexpr std::array<const char*, kFieldCount> kNames{"POS", "SPE", "FOR", "ATR", "ADR", "GTO", "ACT"};
     using Robotiq::ActionRequestBit;
     if(!command.action.get(ActionRequestBit::Activate))
     {
@@ -309,12 +309,12 @@ void UrcapSerial::applyCommand(const Robotiq::GripperCommand& command)
     wanted[kAdr] = command.action.get(ActionRequestBit::AutoReleaseOpenDirection) ? 1 : 0;
     wanted[kGto] = command.action.get(ActionRequestBit::GoTo) ? 1 : 0;
     wanted[kAct] = 1;
-    std::vector<std::pair<const char, int>> changes;
+    std::vector<std::pair<const char*, int>> changes;
     for(std::size_t field = 0; field < kFieldCount; ++field)
     {
-        if(lastSent_[field] != wanted[field])
+        if(wanted[field] and lastSent_[field] != wanted[field])
         {
-            changes.emplace_back(kNames[field], wanted[field]);
+            changes.emplace_back(kNames[field], wanted[field].value());
         }
     }
     if(changes.empty())
@@ -496,9 +496,9 @@ int UrcapSerial::get(const std::string& variable)
     {
         throw UrcapError("unexpected reply '" + reply + "' to GET " + variable);
     }
-    return value;
+    return value.value();
 }
-void UrcapSerial::set(const std::vector<std::pair<const char, int>>& values)
+void UrcapSerial::set(const std::vector<std::pair<const char*, int>>& values)
 {
     std::string line = "SET";
     for(const auto& [variable, value] : values)

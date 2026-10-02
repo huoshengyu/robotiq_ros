@@ -96,7 +96,7 @@ private:
     std::string receiveReply();
     std::string transact(const std::string& line);
     int get(const std::string& variable);
-    void set(const std::vector<std::pair<const char, int>>& values);
+    void set(const std::vector<std::pair<const char*, int>>& values);
     std::string host_;
     uint16_t port_;
     std::chrono::milliseconds timeout_;
